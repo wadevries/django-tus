@@ -21,7 +21,6 @@ TUS_SETTINGS = {}
 class TusUpload(View):
     TUS_UPLOAD_URL = getattr(settings, "TUS_UPLOAD_URL", '/media')
     TUS_UPLOAD_DIR = getattr(settings, "TUS_UPLOAD_DIR", os.path.join(settings.BASE_DIR, 'tmp/uploads/'))
-    TUS_DESTINATION_DIR = getattr(settings, "TUS_DESTINATION_DIR", settings.MEDIA_ROOT)
     TUS_MAX_FILE_SIZE = getattr(settings, "TUS_MAX_FILE_SIZE", 4294967296)  # in bytes
     TUS_FILE_OVERWRITE = getattr(settings, "TUS_FILE_OVERWRITE", True)
     TUS_TIMEOUT = getattr(settings, "TUS_TIMEOUT", 3600)
@@ -53,6 +52,9 @@ class TusUpload(View):
         response['Cache-Control'] = 'no-store'
 
         return response
+
+    def get_destination_dir(self):
+        return getattr(settings, "TUS_DESTINATION_DIR", settings.MEDIA_ROOT)
 
     def finished(self):
         if self.on_finish is not None:
@@ -225,7 +227,7 @@ class TusUpload(View):
             logger.error("post_finish_check")
 
             filename = uuid.uuid4().hex + "_" + filename
-            os.rename(upload_file_path, os.path.join(self.TUS_DESTINATION_DIR, filename))
+            os.rename(upload_file_path, os.path.join(self.get_destination_dir(), filename))
             cache.delete_many([
                 "tus-uploads/{}/file_size".format(resource_id),
                 "tus-uploads/{}/filename".format(resource_id),
@@ -240,7 +242,7 @@ class TusUpload(View):
                 upload_file_path=upload_file_path,
                 file_size=file_size,
                 upload_url=self.TUS_UPLOAD_URL,
-                destination_folder=self.TUS_DESTINATION_DIR)
+                destination_folder=self.get_destination_dir())
 
             self.finished()
 
