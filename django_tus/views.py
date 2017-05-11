@@ -56,7 +56,7 @@ class TusUpload(View):
     def get_destination_dir(self):
         return getattr(settings, "TUS_DESTINATION_DIR", settings.MEDIA_ROOT)
 
-    def finished(self):
+    def finished(self, metadata, user_filename, file_size, destination_path):
         if self.on_finish is not None:
             self.on_finish()
 
@@ -185,7 +185,7 @@ class TusUpload(View):
     def patch(self, request, resource_id, *args, **kwargs):
         response = self.get_tus_response()
 
-        filename = cache.get("tus-uploads/{}/filename".format(resource_id))
+        user_filename = cache.get("tus-uploads/{}/filename".format(resource_id))
         file_size = int(cache.get("tus-uploads/{}/file_size".format(resource_id)))
         metadata = cache.get("tus-uploads/{}/metadata".format(resource_id))
         offset = cache.get("tus-uploads/{}/offset".format(resource_id))
@@ -194,7 +194,7 @@ class TusUpload(View):
         chunk_size = int(request.META.get("CONTENT_LENGTH", 102400))
 
         upload_file_path = os.path.join(self.TUS_UPLOAD_DIR, resource_id)
-        if filename is None or not os.path.lexists(upload_file_path):
+        if user_filename is None or not os.path.lexists(upload_file_path):
             response.status_code = 410
             return response
 
@@ -204,7 +204,7 @@ class TusUpload(View):
 
         logger.error("patch", extra={'request': request.META, 'tus': {
             "resource_id": resource_id,
-            "filename": filename,
+            "filename": user_filename,
             "file_size": file_size,
             "metadata": metadata,
             "offset": offset,
@@ -226,8 +226,11 @@ class TusUpload(View):
         if file_size == new_offset:  # file transfer complete, rename from resource id to actual filename
             logger.error("post_finish_check")
 
-            filename = uuid.uuid4().hex + "_" + filename
-            os.rename(upload_file_path, os.path.join(self.get_destination_dir(), filename))
+            # TODO: maybe let Django's storage backend handle the filename getting
+            filename = uuid.uuid4().hex + "_" + user_filename
+            destination_path = os.path.join(self.get_destination_dir(), filename)
+            os.rename(upload_file_path, destination_path)
+
             cache.delete_many([
                 "tus-uploads/{}/file_size".format(resource_id),
                 "tus-uploads/{}/filename".format(resource_id),
@@ -238,13 +241,13 @@ class TusUpload(View):
             tus_upload_finished_signal.send(
                 sender=self.__class__,
                 metadata=metadata,
-                filename=filename,
+                filename=user_filename,
                 upload_file_path=upload_file_path,
                 file_size=file_size,
                 upload_url=self.TUS_UPLOAD_URL,
                 destination_folder=self.get_destination_dir())
 
-            self.finished()
+            self.finished(metadata, user_filename, file_size, destination_path)
 
         return response
 
